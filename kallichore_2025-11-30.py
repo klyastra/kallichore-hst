@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import matplotlib.colors as colors
 from matplotlib.patches import Circle
+from matplotlib.gridspec import GridSpec
 
 from astropy.io import fits
 import numpy as np
@@ -31,6 +32,18 @@ filename_list = [
         ]
 filepath = '2025-11-30/'
 suffix = '_drc.fits'
+
+
+# -------------------------- #
+# Prepare 1st figure - set up GridSpec
+# The following loop will consecutively fill out the grid squares
+# -------------------------- #
+vmin, vmax = 0, 1.5  # set min/max brightness levels
+fig = plt.figure()
+
+n_rows = 4
+n_cols = 4
+gs = GridSpec(n_rows, n_cols, figure=fig, wspace=0, hspace=0)  # no spacing between subplots
 
 
 # Initialize empty lists, which we'll append to in the following loop
@@ -118,10 +131,6 @@ for fn in filename_list:
         moon_xy_loc = (xpos, ypos)
         phot_radius = 6
 
-        # plot aperture
-        phot_aperture = Circle(moon_xy_loc, radius=phot_radius,
-                edgecolor='red', fill=False, alpha=1, lw=1)
-
         # perform aperture photometry to get moon flux
         aperture = CircularAperture(moon_xy_loc, r=phot_radius)
         aperstats = ApertureStats(data, aperture)
@@ -168,6 +177,29 @@ for fn in filename_list:
         ST_Vega_magdiff = moon_STmag - moon_Vegamag
         print(f"ST_Vega_magdiff = {ST_Vega_magdiff:.5g}")
 
+        
+        # -------------------------- #
+        # FILL SUBPLOT IN GRIDSPEC
+        # -------------------------- #
+        row_index = 0
+        column_index = filename_list.index(fn)  # get index number of selected filename; use that for column index
+        if column_index >= 4:
+                column_index -= 4  # reset index to 0
+                row_index = 1  # move on to next row
+
+        ax = fig.add_subplot(gs[row_index, column_index])
+        data_image = ax.imshow(data, cmap='viridis', origin='lower', vmin=vmin, vmax=vmax)
+        ax.set_xlim(xpos-imwidth, xpos+imwidth)
+        ax.set_ylim(ypos-imwidth, ypos+imwidth)
+        ax.set_xticks([])
+        ax.set_yticks([])  # disable ticks and labels
+
+        # add aperture circle to subplot
+        phot_aperture = Circle(moon_xy_loc, radius=phot_radius,
+                edgecolor='red', fill=False, alpha=1, lw=1)
+        ax.add_patch(phot_aperture)
+        
+
         # -------------------------- #
         # APPEND TO LIST AFTER LOOP ITERATION
         # -------------------------- #
@@ -181,26 +213,21 @@ for fn in filename_list:
 # CREATE 1ST FIGURE SHOWING FINAL IMAGE PREVIEW
 # (show plot of final image, after loop ends)
 # -------------------------- #
-vmin, vmax = 0, 1.5
 
-fig1, ax1 = plt.subplots(figsize=(11, 8))
 
-# data
-data_image = ax1.imshow(data, cmap='viridis', origin='lower', vmin=vmin, vmax=vmax)
-fig1.colorbar(data_image, label='Flux (electrons/s)', shrink=0.75)  # let it steal axis
+#ax.set_xlabel('x [px]')
+#ax.set_ylabel('y [px]')
 
-ax1.set_xlim(xpos-imwidth, xpos+imwidth)
-ax1.set_ylim(ypos-imwidth, ypos+imwidth)
-ax1.set_xlabel('x [px]')
-ax1.set_ylabel('y [px]')
-ax1.set_title(f'Kallichore WFC3 image ({filename_list[-1]})')
-ax1.add_patch(phot_aperture)
+
+fig.suptitle(f'Kallichore WFC3 image cutouts')
+fig.colorbar(data_image, label='Flux (electrons/s)', shrink=0.75)  # let it steal axis
+fig.tight_layout()
 
 # -------------------------- #
 # CREATE 2ND FIGURE FOR LIGHTCURVE
 # -------------------------- #
 
-fig2, ax2 = plt.subplots(figsize=(11, 8))
+ax2 = fig.add_subplot(gs[2:4, 0:4])  # spans 2 rows & 4 columns
 
 # Convert time from MJD into elapsed minutes
 obstime_arr = np.array(obstime_list)
@@ -226,6 +253,6 @@ np.savetxt(
         comments=''  # Avoids '#' at the start of the header line
         )
 
-plt.tight_layout()
-fig2.savefig('Kallichore_2025-11-30_lightcurve.pdf', dpi=200)
+fig.tight_layout()
+# fig.savefig('Kallichore_2025-11-30_lightcurve.pdf', dpi=200)
 plt.show()
