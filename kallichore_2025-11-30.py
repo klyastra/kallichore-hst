@@ -63,9 +63,10 @@ for fn in filename_list:
                 obs_time = prim_header['EXPSTART']  # observation star time in MJD
                 exp_time = prim_header['EXPTIME']  # exposure time in seconds
 
+                # read and gain already corrected in drc WFC3 images, no need to use these
                 # https://hst-docs.stsci.edu/wfc3dhb/chapter-5-wfc3-uvis-sources-of-error/5-1-gain-and-read-noise#id-5.1GainandReadNoise-5.1.25.1.2ReadNoise
-                gain = prim_header['CCDGAIN']  # CCD gain noise
-                read = 2.99 # read noise is 2.99 for UVIS-2K2C (see HST proposal)
+                ## gain = prim_header['CCDGAIN']  # CCD gain noise
+                ## read = 2.99 # read noise is 2.99 for UVIS-2K2C (see HST proposal)
 
                 # data from Binary Table containing Kallichore's predicted position
                 # (note: predicted position is always offset toward the upper right from actual position
@@ -128,14 +129,23 @@ for fn in filename_list:
         # ApertureStats returns centroid, mean, median, standard deviation (std), sum, sum_aper_area
         # we want background-subtracted sum & std.
 
-        ### Obtain the median background level from the data cutout: ###
-        bkg = np.nanmedian(cut_data)  # take median of cutout, ignoring NaNs
-        print(f'bkg = {bkg}')
+        ### Obtain the background from the data cutout: ###
+        bg = cut_data.copy()
+        bg[bg > 0.2] = np.nan  # replace high values with NaN to isolate background
+        bg_median = np.nanmedian(bg)  # take median of background, ignoring NaNs
+        bg_std = np.nanstd(bg)  # take standard deviation of background, ignoring NaNs
+        print(f'bg_median = {bg_median}')
+        print(f'bg_std = {bg_std}')
 
-        ### Compute flux from aperture photometry
+        ### Compute flux and its uncertainty (flux_err) from aperture photometry ###
         # Note that aperstats.sum_aper_area outputs a Quantity object. Use the astropy.units ".value" suffix to remove unit.
-        bg_subtracted_flux = aperstats.sum - aperstats.sum_aper_area.value * bkg  # subtract background from sum
-        moon_flux = unc.ufloat(bg_subtracted_flux, aperstats.std)  # store into a float with uncertainty
+        aperture_area = aperstats.sum_aper_area.value  # aperture area in px^2 equivalent to number of enclosed pixels
+        bg_subtracted_flux = aperstats.sum - aperture_area * bkg  # subtract background from sum
+
+        # Use the flux uncertainty equation from https://web.ipac.caltech.edu/staff/fmasci/home/mystats/ApPhotUncert_corr.pdf
+        flux_err = np.sqrt(bg_subtracted_flux/exp_time + aperture_area*(bg_std)**2)
+
+        moon_flux = unc.ufloat(bg_subtracted_flux, flux_err)  # store into a float with uncertainty
         print(f'moon_flux = {moon_flux:.5g}')  # ":.5g" = print with 5 sigfigs
         # You can extract the nominal value and uncertainty respectively:
         ## print(f"Nominal value: {moon_flux.nominal_value}")
