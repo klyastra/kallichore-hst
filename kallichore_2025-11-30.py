@@ -107,7 +107,7 @@ for fn in filename_list:
 
 
         # -------------------------- #
-        # PHOTOMETRY (ST Mag)
+        # PHOTOMETRY (ST mag)
         # -------------------------- #
         # Add circular photometric apertures to residual subplot
         moon_xy_loc = (xpos, ypos)
@@ -131,7 +131,7 @@ for fn in filename_list:
 
         # Convert flux to magnitudes using zero point
         # https://www.stsci.edu/hst/wfpc2/Wfpc2_dhb/wfpc2_ch52.html
-        moon_mag = zp_mag - 2.5 * umath.log10(zp_flux * moon_flux)
+        moon_mag = -zp_mag - 2.5 * umath.log10(moon_flux/exp_time)
         print(f"moon_mag = {moon_mag:.5g}")
 
 
