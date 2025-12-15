@@ -5,6 +5,7 @@ from matplotlib.patches import Circle
 from astropy.io import fits
 import numpy as np
 from photutils.aperture import CircularAperture, ApertureStats
+from astropy import units as u
 
 from astropy.nddata import Cutout2D
 from photutils.detection import DAOStarFinder
@@ -31,6 +32,7 @@ filename_list = [
 filepath = '2025-11-30/'
 suffix = '_drc.fits'
 
+
 # Initialize empty lists, which we'll append to in the following loop
 obstime_list = []
 mag_list = []
@@ -55,7 +57,8 @@ for fn in filename_list:
 
                 # Get the value and comment of a keyword in the HDU header
                 zp_mag = sci_header['PHOTZPT']  # magnitude of an object that produces 1 count per second on the detector
-                zp_flux = sci_header['PHOTFLAM']  # flux of zero point
+                photflam = sci_header['PHOTFLAM']  # flux of zero point
+                pivot_wv = sci_header['PHOTPLAM']  # Pivot wavelength (Angstroms)
 
                 obs_time = prim_header['EXPSTART']  # observation star time in MJD
                 exp_time = prim_header['EXPTIME']  # exposure time in seconds
@@ -73,6 +76,7 @@ for fn in filename_list:
         # -------------------------- #
         # AUTOMATICALLY FIND LOCATION OF MOON
         # -------------------------- #
+        print(f'--- {fn} ---')
         # Define cutout location, with "position" being the cutout's center
         imwidth = 40  # image cutout box half-width [px]
         cutout = Cutout2D(data, position=(xpos, ypos), size=imwidth)
@@ -82,11 +86,10 @@ for fn in filename_list:
         mask = np.isnan(cut_data)
         # Background estimate
         bkg_estimator = MMMBackground()
-        bkg = bkg_estimator(cut_data[~mask])
-        print(bkg)
+        bkg = bkg_estimator(cut_data[~mask])  # Note that this isn't a completely reliable way of measuring background level
+
         # Noise estimate
         sigma = np.nanstd(cut_data - bkg)
-        print(sigma)
 
         # Compute centroid in cutout's coordinates
         daofind = DAOStarFinder(fwhm=2.0, threshold=5.0*sigma)
@@ -107,12 +110,14 @@ for fn in filename_list:
 
 
         # -------------------------- #
-        # PHOTOMETRY (ST mag)
+        # PHOTOMETRY (ST mag --> Vega mag)
+        # Vega mag system is standard for Solar System objects; see https://sci-hub.se/10.1016/j.icarus.2008.10.025
         # -------------------------- #
         # Add circular photometric apertures to residual subplot
         moon_xy_loc = (xpos, ypos)
         phot_radius = 6
 
+        # plot aperture
         phot_aperture = Circle(moon_xy_loc, radius=phot_radius,
                 edgecolor='red', fill=False, alpha=1, lw=1)
 
@@ -120,27 +125,46 @@ for fn in filename_list:
         aperture = CircularAperture(moon_xy_loc, r=phot_radius)
         aperstats = ApertureStats(data, aperture)
 
-        # ApertureStats returns centroid, mean, median, standard deviation (std), sum
-        # we want sum & std
-        ## moon_flux, moon_flux_std = aperstats.sum, aperstats.std
-        moon_flux = unc.ufloat(aperstats.sum, aperstats.std)
+        # ApertureStats returns centroid, mean, median, standard deviation (std), sum, sum_aper_area
+        # we want background-subtracted sum & std.
+
+        ### Obtain the median background level from the data cutout: ###
+        bkg = np.nanmedian(cut_data)  # take median of cutout, ignoring NaNs
+        print(f'bkg = {bkg}')
+
+        ### Compute flux from aperture photometry
+        # Note that aperstats.sum_aper_area outputs a Quantity object. Use the astropy.units ".value" suffix to remove unit.
+        bg_subtracted_flux = aperstats.sum - aperstats.sum_aper_area.value * bkg  # subtract background from sum
+        moon_flux = unc.ufloat(bg_subtracted_flux, aperstats.std)  # store into a float with uncertainty
         print(f'moon_flux = {moon_flux:.5g}')  # ":.5g" = print with 5 sigfigs
         # You can extract the nominal value and uncertainty respectively:
         ## print(f"Nominal value: {moon_flux.nominal_value}")
         ## print(f"Propagated error (std dev): {moon_flux.std_dev}")
 
-        # Convert flux to magnitudes using zero point
-        # https://www.stsci.edu/hst/wfpc2/Wfpc2_dhb/wfpc2_ch52.html
-        moon_mag = -zp_mag - 2.5 * umath.log10(moon_flux/exp_time)
-        print(f"moon_mag = {moon_mag:.5g}")
+        # Convert flux (electrons/s) to ST magnitudes using ST zero point & PhotFlam.
+        # In drc-format images, exposure time has already been taken into account. DON'T USE EXPTIME FOR DRC!
+        # https://www.stsci.edu/hst/instrumentation/acs/data-analysis/zeropoints
+        moon_STmag = zp_mag - 2.5 * umath.log10(photflam * moon_flux)
+        print(f"moon_STmag = {moon_STmag:.5g}")
 
+        # Convert ST to AB magnitudes according to https://hst-docs.stsci.edu/acsdhb/chapter-5-acs-data-analysis/5-1-photometry
+        moon_ABmag = moon_STmag - 5*umath.log10(pivot_wv) + 18.6921
+
+        # Convert AB to Vega magnitude by subtracting the AB-Vega difference (0.09) according to the table in the following link:
+        # https://hst-docs.stsci.edu/acsihb/chapter-10-imaging-reference-material/10-3-throughputs-and-correction-tables
+        moon_Vegamag = moon_ABmag - 0.09
+        print(f"moon_Vegamag = {moon_Vegamag:.5g}")
+
+        ST_Vega_magdiff = moon_STmag - moon_Vegamag
+        print(f"ST_Vega_magdiff = {ST_Vega_magdiff:.5g}")
 
         # -------------------------- #
         # APPEND TO LIST AFTER LOOP ITERATION
         # -------------------------- #
         obstime_list.append(obs_time)  # MJD
-        mag_list.append(moon_mag.nominal_value)
-        mag_err_list.append(moon_mag.std_dev)
+        mag_list.append(moon_Vegamag.nominal_value)
+        mag_err_list.append(moon_Vegamag.std_dev)
+        print('')
 
 
 # -------------------------- #
