@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import matplotlib.colors as colors
 from matplotlib.patches import Circle
+from matplotlib.gridspec import GridSpec
 
 from astropy.io import fits
 import numpy as np
@@ -31,6 +32,20 @@ filename_list = [
         ]
 filepath = '2025-12-05/'
 suffix = '_drc.fits'
+
+
+# -------------------------- #
+# Prepare 1st figure - set up GridSpec
+# The following loop will consecutively fill out the grid squares
+# -------------------------- #
+vmin, vmax = 0, 1.5  # set min/max brightness levels
+fig1 = plt.figure(figsize=(11, 8))
+
+n_rows = 2
+n_cols = 5
+# make the colorbar axis thin (column 5)
+gs = GridSpec(n_rows, n_cols, figure=fig1, width_ratios=[1, 1, 1, 1, 0.1], wspace=0, hspace=-0.49)  # no spacing between subplots
+
 
 # Initialize empty lists, which we'll append to in the following loop
 obstime_list = []
@@ -143,10 +158,6 @@ for fn in filename_list:
         moon_xy_loc = (xpos, ypos)
         phot_radius = 6
 
-        # plot aperture
-        phot_aperture = Circle(moon_xy_loc, radius=phot_radius,
-                edgecolor='red', fill=False, alpha=1, lw=1)
-
         # perform aperture photometry to get moon flux
         aperture = CircularAperture(moon_xy_loc, r=phot_radius)
         aperstats = ApertureStats(data, aperture)
@@ -195,6 +206,29 @@ for fn in filename_list:
 
 
         # -------------------------- #
+        # FILL SUBPLOT IN GRIDSPEC
+        # -------------------------- #
+        row_index = 0
+        column_index = filename_list.index(fn)  # get index number of selected filename; use that for column index
+        if column_index >= 4:
+                column_index -= 4  # reset index to 0
+                row_index = 1  # move on to next row
+
+        ax = fig1.add_subplot(gs[row_index, column_index])
+        data_image = ax.imshow(data, cmap='viridis', origin='lower', vmin=vmin, vmax=vmax, aspect='equal')  # 'auto' to remove gaps between subplots
+        ax.set_box_aspect(1)
+        ax.set_xlim(xpos-imwidth, xpos+imwidth)
+        ax.set_ylim(ypos-imwidth, ypos+imwidth)
+        ax.set_xticks([])
+        ax.set_yticks([])  # disable ticks and labels
+
+        # add aperture circle to subplot
+        phot_aperture = Circle(moon_xy_loc, radius=phot_radius,
+                edgecolor='red', fill=False, alpha=1, lw=1)
+        ax.add_patch(phot_aperture)
+        
+
+        # -------------------------- #
         # APPEND TO LIST AFTER LOOP ITERATION
         # -------------------------- #
         obstime_list.append(obs_time)  # MJD
@@ -207,20 +241,30 @@ for fn in filename_list:
 # CREATE 1ST FIGURE SHOWING FINAL IMAGE PREVIEW
 # (show plot of final image, after loop ends)
 # -------------------------- #
-vmin, vmax = 0, 1.5
+fig1.suptitle(f'Kallichore 2025-Dec-05 HST/WFC3 image cutouts', y=0.785, fontsize=14)
 
-fig1, ax1 = plt.subplots(figsize=(11, 8))
+# Create separate axes for colorbar
+cax = fig1.add_subplot(gs[0:2, 4])
 
-# data
-data_image = ax1.imshow(data, cmap='viridis', origin='lower', vmin=vmin, vmax=vmax)
-fig1.colorbar(data_image, label='Flux (electrons/s)', shrink=0.75)  # let it steal axis
+# Reduce height of colorbar (thanks ChatGPT for providing a solution to this stupid GridSpec spacing behavior)
+pos = cax.get_position()
 
-ax1.set_xlim(xpos-imwidth, xpos+imwidth)
-ax1.set_ylim(ypos-imwidth, ypos+imwidth)
-ax1.set_xlabel('x [px]')
-ax1.set_ylabel('y [px]')
-ax1.set_title(f'Kallichore WFC3 image ({filename_list[-1]})')
-ax1.add_patch(phot_aperture)
+new_height = 0.675 * pos.height        # 75% of total height
+new_y0 = pos.y0 + 0.5 * (pos.height - new_height)
+
+cax.set_position([
+    pos.x0,
+    new_y0,
+    pos.width,
+    new_height
+])
+
+# Add colorbar
+fig1.colorbar(data_image, cax=cax, label='Flux (electrons/s)')  # let it steal axis
+
+fig1.tight_layout()
+fig1.savefig('Kallichore_2025-12-05_cutouts.pdf', dpi=200)
+
 
 # -------------------------- #
 # CREATE 2ND FIGURE FOR LIGHTCURVE

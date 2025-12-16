@@ -215,8 +215,6 @@ for fn in filename_list:
 # CREATE 1ST FIGURE SHOWING FINAL IMAGE PREVIEW
 # (show plot of final image, after loop ends)
 # -------------------------- #
-#ax.set_xlabel('x [px]')
-#ax.set_ylabel('y [px]')
 fig1.suptitle(f'Kallichore 2025-Nov-30 HST/WFC3 image cutouts', y=0.785, fontsize=14)
 
 # Create separate axes for colorbar
@@ -240,6 +238,7 @@ fig1.colorbar(data_image, cax=cax, label='Flux (electrons/s)')  # let it steal a
 
 fig1.tight_layout()
 fig1.savefig('Kallichore_2025-11-30_cutouts.pdf', dpi=200)
+
 
 # -------------------------- #
 # CREATE 2ND FIGURE FOR LIGHTCURVE
